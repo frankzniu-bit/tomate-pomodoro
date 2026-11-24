@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-style="fruit">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -10,20 +10,45 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23FF5400'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@400;500&family=Rubik:wght@800;900&family=Kalam:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body data-mode="focus">
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <filter id="boil">
+      <feTurbulence id="boilNoise" type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="1" result="n" />
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="5" xChannelSelector="R" yChannelSelector="G" />
+    </filter>
+  </svg>
+
   <canvas id="gl" aria-hidden="true"></canvas>
+  <canvas id="sketch" aria-hidden="true"></canvas>
   <div class="fallback" aria-hidden="true"></div>
 
   <header class="top">
-    <div class="mark">Tomate<sup>®</sup></div>
-    <p class="tag"><em>A slow pomodoro.</em> Focus until the fruit is gone.</p>
-    <div class="rounds" aria-label="Rounds">
-      <span class="label">Round</span>
-      <span id="roundNum" class="num">01</span>
-      <span class="dots" id="dots"><i></i><i></i><i></i><i></i></span>
+    <div class="brand">
+      <div class="mark">Tomate<sup>®</sup></div>
+      <section class="hud" aria-label="Fight status">
+        <p class="hud-label" id="foeLabel">Now fighting</p>
+        <p class="hud-name" id="foeName">The Distraction</p>
+        <div class="hp"><i id="hpFill"></i></div>
+        <p class="hud-sub" id="hpText">HP 100%</p>
+      </section>
+    </div>
+    <p class="tag">
+      <span class="for-fruit"><em>A slow pomodoro.</em> Focus until the fruit is gone.</span>
+      <span class="for-sketch"><em>A messy little duel.</em> Hold the line until it's gone.</span>
+    </p>
+    <div class="right">
+      <div class="rounds" aria-label="Rounds">
+        <span class="label">Round</span>
+        <span id="roundNum" class="num">01</span>
+        <span class="dots" id="dots"><i></i><i></i><i></i><i></i></span>
+      </div>
+      <div class="switch" role="group" aria-label="Style">
+        <button data-style="fruit" aria-pressed="true">Fruit</button>
+        <button data-style="sketch" aria-pressed="false">Sketch</button>
+      </div>
     </div>
   </header>
 
@@ -48,9 +73,10 @@
       <button class="ghost" id="skip" aria-label="Skip to next">Skip</button>
     </div>
 
-    <p class="keys"><kbd>Space</kbd> start/pause <kbd>R</kbd> reset <kbd>S</kbd> skip <kbd>1–3</kbd> mode</p>
+    <p class="keys"><kbd>Space</kbd> start/pause <kbd>R</kbd> reset <kbd>S</kbd> skip <kbd>1–3</kbd> mode <kbd>V</kbd> style</p>
   </footer>
 
+  <script src="sketch.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

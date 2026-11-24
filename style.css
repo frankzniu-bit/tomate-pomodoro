@@ -251,6 +251,30 @@ kbd {
 }
 kbd:first-child { margin-left: 0; }
 
+.right {
+  justify-self: end;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+.switch {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px;
+}
+.switch button {
+  padding: 4px 12px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  transition: color 200ms var(--ease), background-color 200ms var(--ease);
+}
+.switch button:hover { color: var(--ink); }
+.switch button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+.hud, .for-sketch, #sketch { display: none; }
+
 @media (max-width: 760px) {
   .top { grid-template-columns: 1fr auto; padding: 16px; }
   .tag { display: none; }
@@ -271,3 +295,162 @@ kbd:first-child { margin-left: 0; }
   .time .d b.roll { animation: none; }
   body.running .time .colon { animation: none; }
 }
+
+/* ==========================================================
+   Sketch style: ink on paper, boiling lines, hand-drawn chrome
+   ========================================================== */
+:root[data-style="sketch"] {
+  --bg: #F2F0EA;
+  --ink: #141312;
+  --ink-2: #5E5A55;
+  --line: #141312;
+  --accent: #141312;
+  --hand: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  --hand-2: 15px 255px 15px 225px / 225px 15px 255px 15px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])[data-style="sketch"] {
+    --bg: #191817;
+    --ink: #ECE8E0;
+    --ink-2: #9A958D;
+    --line: #ECE8E0;
+    --accent: #ECE8E0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"][data-style="sketch"] {
+  --bg: #191817;
+  --ink: #ECE8E0;
+  --ink-2: #9A958D;
+  --line: #ECE8E0;
+  --accent: #ECE8E0;
+  color-scheme: dark;
+}
+
+[data-style="sketch"] #gl,
+[data-style="sketch"] .fallback { display: none !important; }
+[data-style="sketch"] #sketch { display: block; position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; }
+[data-style="sketch"] .for-fruit { display: none; }
+[data-style="sketch"] .for-sketch { display: inline; }
+
+[data-style="sketch"] .mark {
+  font-family: "Rubik", sans-serif;
+  font-weight: 900;
+  font-size: 26px;
+  letter-spacing: -0.03em;
+  filter: url(#boil);
+}
+[data-style="sketch"] .tag em { font-family: "Kalam", cursive; font-style: normal; font-weight: 700; font-size: 17px; }
+
+/* HUD card */
+[data-style="sketch"] .hud {
+  display: block;
+  margin-top: 16px;
+  width: 248px;
+  padding: 12px 16px 12px;
+  background: var(--bg);
+  border: 2.5px solid var(--ink);
+  border-radius: 18px 6px 20px 8px / 8px 20px 6px 18px;
+  box-shadow: 4px 5px 0 var(--ink);
+}
+.hud-label { text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-2); font-size: 10px; }
+.hud-name {
+  font-family: "Rubik", sans-serif;
+  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin: 4px 0 8px;
+}
+.hp {
+  height: 14px;
+  border: 2px solid var(--ink);
+  border-radius: 999px 40px 999px 30px;
+  overflow: hidden;
+}
+.hp i {
+  display: block;
+  height: 100%;
+  background: repeating-linear-gradient(-45deg, var(--ink) 0 2px, transparent 2px 5px);
+  transform-origin: left center;
+  transition: transform 300ms var(--ease);
+}
+.hud-sub { margin-top: 6px; font-variant-numeric: tabular-nums; font-size: 11px; }
+
+/* Style switch */
+[data-style="sketch"] .switch {
+  border: 2px solid var(--ink);
+  border-radius: var(--hand);
+  padding: 3px;
+}
+[data-style="sketch"] .switch button { border-radius: var(--hand-2); font-weight: 500; }
+
+/* Stage */
+[data-style="sketch"] .stage { place-content: start center; padding-top: clamp(0px, 2vh, 32px); }
+[data-style="sketch"] .kicker {
+  display: inline-block;
+  padding: 2px 12px;
+  border: 2px solid var(--ink);
+  border-radius: var(--hand);
+  background: var(--bg);
+  transform: rotate(-3deg);
+  margin-bottom: 12px;
+}
+[data-style="sketch"] .time {
+  font-family: "Rubik", sans-serif;
+  font-weight: 900;
+  font-size: clamp(76px, 14vw, 200px);
+  letter-spacing: -0.03em;
+  line-height: 0.9;
+  filter: url(#boil);
+}
+[data-style="sketch"] .time .d { width: 0.64em; height: 0.98em; }
+[data-style="sketch"] .time .colon { width: 0.28em; transform: translateY(-0.04em); }
+[data-style="sketch"] .status {
+  font-family: "Kalam", cursive;
+  font-style: normal;
+  font-size: 21px;
+  margin-top: 8px;
+}
+
+/* Controls */
+[data-style="sketch"] button { font-family: "Rubik", sans-serif; font-weight: 800; letter-spacing: 0.06em; }
+[data-style="sketch"] .primary {
+  background: var(--ink);
+  color: var(--bg);
+  border: 2.5px solid var(--ink);
+  border-radius: var(--hand);
+  box-shadow: 4px 5px 0 -1px var(--bg), 4px 5px 0 1.5px var(--ink);
+  transition: transform 150ms var(--ease), box-shadow 150ms var(--ease);
+}
+[data-style="sketch"] .ghost {
+  background: var(--bg);
+  backdrop-filter: none;
+  border: 2.5px solid var(--ink);
+  border-radius: var(--hand-2);
+  box-shadow: 3px 4px 0 var(--ink);
+  transition: transform 150ms var(--ease), box-shadow 150ms var(--ease);
+}
+[data-style="sketch"] .primary:hover,
+[data-style="sketch"] .ghost:hover { transform: translate(-1px, -1px) rotate(-1deg); }
+[data-style="sketch"] .primary:active,
+[data-style="sketch"] .ghost:active { transform: translate(3px, 4px); box-shadow: none; }
+
+[data-style="sketch"] .modes button { padding: 4px 10px; border: 2px solid transparent; border-radius: var(--hand); }
+[data-style="sketch"] .modes button[aria-pressed="true"] { border-color: var(--ink); background: var(--bg); }
+[data-style="sketch"] .modes button[aria-pressed="true"]::after { display: none; }
+[data-style="sketch"] .modes button:hover { transform: translateX(2px) rotate(-1deg); }
+
+[data-style="sketch"] .dots i { border-width: 2px; border-radius: 48% 52% 45% 55%; }
+[data-style="sketch"] kbd { border: 1.5px solid var(--ink); border-radius: var(--hand); background: var(--bg); }
+[data-style="sketch"] .rounds { font-weight: 500; }
+[data-style="sketch"] button:focus-visible { outline: 2px dashed var(--ink); }
+
+@media (max-width: 760px) {
+  [data-style="sketch"] .hud { display: none; }
+  [data-style="sketch"] .modes button { padding: 2px 8px; }
+  [data-style="sketch"] .modes button[aria-pressed="true"] { text-decoration: none; }
+}
+[data-style="sketch"] .brand { position: relative; }
+[data-style="sketch"] .hud { position: absolute; top: 100%; left: 0; z-index: 2; }

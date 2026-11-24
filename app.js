@@ -2,9 +2,9 @@
   "use strict";
 
   const MODES = {
-    focus: { label: "Focus", minutes: 25, idle: "Ready when you are.", run: "Stay with the one thing." },
-    short: { label: "Short break", minutes: 5, idle: "Step away for a moment.", run: "Breathe with the fruit." },
-    long: { label: "Long break", minutes: 15, idle: "You earned a long one.", run: "Go somewhere without a screen." },
+    focus: { label: "Focus", minutes: 25, idle: "Ready when you are.", run: "Stay with the one thing.", sketch: "Hold the line." },
+    short: { label: "Short break", minutes: 5, idle: "Step away for a moment.", run: "Breathe with the fruit.", sketch: "Rest by the fire." },
+    long: { label: "Long break", minutes: 15, idle: "You earned a long one.", run: "Go somewhere without a screen.", sketch: "Sleep it off. It will be back." },
   };
   const ROUNDS = 4;
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -30,14 +30,17 @@
     endAt: 0,
     running: false,
     done: 0, // completed focus sessions
+    style: "fruit",
   };
 
   try {
     const saved = JSON.parse(localStorage.getItem("tomate") || "null");
     if (saved && Number.isFinite(saved.done)) state.done = saved.done;
+    if (saved && (saved.style === "fruit" || saved.style === "sketch")) state.style = saved.style;
   } catch (_) {}
+  if (location.hash === "#sketch" || location.hash === "#fruit") state.style = location.hash.slice(1);
   const persist = () => {
-    try { localStorage.setItem("tomate", JSON.stringify({ done: state.done })); } catch (_) {}
+    try { localStorage.setItem("tomate", JSON.stringify({ done: state.done, style: state.style })); } catch (_) {}
   };
 
   /* ---------- Timer ---------- */
@@ -67,6 +70,7 @@
 
   function complete(skipped) {
     if (!skipped) chime();
+    sketch.onComplete(state.mode, skipped);
     if (state.mode === "focus") {
       if (!skipped) state.done += 1;
       persist();
@@ -104,7 +108,7 @@
     ui.kicker.textContent = MODES[state.mode].label;
     ui.toggleLabel.textContent = state.running ? "Pause" : state.remaining < state.total ? "Resume" : "Start";
     const fresh = state.remaining === state.total && !state.running;
-    if (fresh || state.running) ui.status.textContent = state.running ? MODES[state.mode].run : MODES[state.mode].idle;
+    if (fresh || state.running) ui.status.textContent = state.running ? (state.style === "sketch" ? MODES[state.mode].sketch : MODES[state.mode].run) : MODES[state.mode].idle;
     if (!state.running && !fresh) ui.status.textContent = "Paused.";
 
     const inCycle = state.done % ROUNDS;
@@ -130,6 +134,7 @@
     else if (k === "1") setMode("focus");
     else if (k === "2") setMode("short");
     else if (k === "3") setMode("long");
+    else if (k === "v") setStyle(state.style === "sketch" ? "fruit" : "sketch");
   });
 
   /* ---------- Sound ---------- */
@@ -298,7 +303,9 @@
     mouse.x += (mouse.tx - mouse.x) * Math.min(1, dt * 3);
     mouse.y += (mouse.ty - mouse.y) * Math.min(1, dt * 3);
 
-    if (prog) {
+    if (state.style === "sketch") {
+      // the sketch renderer draws on its own canvas
+    } else if (prog) {
       const dpr = canvas.width / innerWidth;
       gl.uniform2f(U.uRes, canvas.width, canvas.height);
       gl.uniform1f(U.uTime, now / 1000);
@@ -316,6 +323,24 @@
     requestAnimationFrame(frame);
   }
 
+  /* ---------- Style ---------- */
+
+  const sketch = window.createSketch(document.getElementById("sketch"), () => state);
+  const styleButtons = [...document.querySelectorAll(".switch button")];
+
+  function setStyle(style) {
+    state.style = style;
+    document.documentElement.dataset.style = style;
+    styleButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.style === style)));
+    try { history.replaceState(null, "", style === "sketch" ? "#sketch" : location.pathname + location.search); } catch (_) {}
+    persist();
+    readPalette();
+    sketch.setActive(style === "sketch");
+    render(true);
+  }
+  styleButtons.forEach((b) => b.addEventListener("click", () => setStyle(b.dataset.style)));
+
+  setStyle(state.style);
   setMode("focus");
   requestAnimationFrame(frame);
 })();
