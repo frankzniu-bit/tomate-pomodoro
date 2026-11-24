@@ -31,6 +31,7 @@
     kicker: $("#kicker"),
     status: $("#status"),
     quest: $("#quest"),
+    play: $("#play"),
     toggle: $("#toggle"),
     toggleLabel: $("#toggleLabel"),
     reset: $("#reset"),
@@ -102,6 +103,7 @@
     state.total = state.remaining = state.settings[mode] * 60000;
     state.running = false;
     state.drops = 0;
+    if (mode === "focus" && sketch.playing()) sketch.stopGame();
     document.body.dataset.mode = mode;
     ui.modeButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
     render(true);
@@ -206,6 +208,10 @@
     [...ui.dots.children].forEach((d, i) => d.classList.toggle("on", cycleFull || i < inCycle));
     ui.roundNum.textContent = String(state.done + 1).padStart(2, "0");
     renderQuest();
+    const playing = sketch.playing();
+    ui.play.hidden = state.mode === "focus";
+    ui.play.textContent = playing ? "Quit brawl" : "Fight it anyway";
+    document.body.classList.toggle("brawl", playing);
   }
 
   function renderQuest() {
@@ -229,10 +235,21 @@
   addEventListener("keydown", (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
-    if (k === "escape") return closeSheets();
+    if (k === "escape") {
+      if (sketch.playing() && !openSheet) return sketch.stopGame();
+      return closeSheets();
+    }
     const tag = e.target && e.target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA") return;
     if (openSheet) return;
+    if (sketch.playing()) {
+      const act = k === " " || k === "arrowup" || k === "w" ? "jump" : k === "x" || k === "j" || k === "enter" ? "slash" : null;
+      if (act) {
+        e.preventDefault();
+        if (!e.repeat) sketch.input(act);
+        return;
+      }
+    }
     if (k === " ") {
       if (document.activeElement && document.activeElement.tagName === "BUTTON") return; // let the button handle it
       e.preventDefault();
@@ -609,7 +626,9 @@
 
   /* ---------- Style ---------- */
 
-  const sketch = window.createSketch(document.getElementById("sketch"), () => state);
+  const sketch = window.createSketch(document.getElementById("sketch"), () => state, {
+    onGameChange: () => render(true),
+  });
   const styleButtons = [...document.querySelectorAll(".switch button")];
 
   function setStyle(style) {
@@ -623,6 +642,16 @@
     render(true);
   }
   styleButtons.forEach((b) => b.addEventListener("click", () => setStyle(b.dataset.style)));
+
+  ui.play.addEventListener("click", () => {
+    if (sketch.playing()) sketch.stopGame();
+    else {
+      if (state.style !== "sketch") setStyle("sketch");
+      if (!state.running && state.remaining === state.total) start();
+      sketch.startGame();
+    }
+    ui.play.blur();
+  });
 
   setStyle(state.style);
   renderTasks();

@@ -682,3 +682,25 @@ kbd:first-child { margin-left: 0; }
 [data-style="sketch"] .tools button { color: var(--ink); }
 [data-style="sketch"] .tools button:hover { text-decoration: underline wavy; text-underline-offset: 4px; }
 [data-style="sketch"] .scrim { background: color-mix(in srgb, var(--bg) 55%, transparent); }
+
+/* Break brawl */
+.play {
+  pointer-events: auto;
+  margin-top: 12px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--bg);
+  transition: transform 150ms var(--ease);
+}
+.play:hover { transform: scale(1.04); }
+.play[hidden] { display: none; }
+.brawl .quest { display: none; }
+[data-style="sketch"] .play {
+  border: 2.5px solid var(--ink);
+  border-radius: var(--hand);
+  box-shadow: 3px 4px 0 -1px var(--bg), 3px 4px 0 1.5px var(--ink);
+  transform: rotate(1.5deg);
+}
+[data-style="sketch"] .play:hover { transform: rotate(-1deg) translate(-1px, -1px); }
+.brawl #sketch { cursor: pointer; touch-action: manipulation; }

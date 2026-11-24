@@ -11,6 +11,8 @@ It has two styles, which you switch between with the toggle, `V`, or the URL (`/
 
 **Fight moves:** the hero starts with Lunge, Feint and Riposte, with a short rest between moves. The boss drops loot every 5 minutes of focus. Weapons unlock new moves (Fountain Pen: Thrust, Ruler Blade: Sweep, Eraser Maul: Slam). Armor changes the hero's look and adds a perk, for example the Ink Shield knocks thrown bubbles back at the boss. The kit is saved in the browser.
 
+**Break Brawl:** during a break, press "Fight it anyway" to play a round against the boss. Jump the rolling ink (`Space`/`↑`, or tap the left half of the screen) and slash notification bubbles back at the boss (`X`/`J`, or tap the right half). You have 3 hearts, or 4 with the Ink Shield, and the Quick Boots jump higher. Each boss you beat brings a faster one. Your best score is saved, and the game ends when the break does.
+
 **Timer:** Classic 25/5/15, Deep 50/10/20, Sprint 15/3/10, or custom lengths and rounds.
 
 **Tasks:** a short list (up to 8). The current task shows under the timer, and in Sketch it becomes the boss's name.

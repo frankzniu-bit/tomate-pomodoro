@@ -2,12 +2,13 @@
   "use strict";
 
   // Hand-drawn duel: a hero versus a scribbled boss whose HP is the time left.
-  window.createSketch = function (canvas, getState) {
+  window.createSketch = function (canvas, getState, hooks = {}) {
     const ctx = canvas.getContext("2d");
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const FOES = ["The Distraction", "Scroll Wraith", "Ping Goblin", "The Maybe-Later", "Tab Hydra"];
     const TAUNTS = ["ping!", "1 new msg", "just check?", "scroll…", "5 min?", "look up", "brb?"];
     const POWS = ["SHK!", "THWIP!", "POW", "SNIKT", "WHAM"];
+    const PINGS = ["ping!", "psst", "brb?", "1 new", "hey"];
     const UNLOCKS = { pen: "thrust", ruler: "sweep", eraser: "slam" };
     const hud = {
       label: document.getElementById("foeLabel"),
@@ -771,6 +772,218 @@
       ctx.globalAlpha = 1;
     }
 
+    /* ---------- Break Brawl: a playable round during breaks ----------
+       Jump the rolling ink, slash the pings back at the boss. */
+    const BEST_KEY = "tomate-brawl-best";
+    let best = 0;
+    try { best = Number(localStorage.getItem(BEST_KEY)) || 0; } catch (_) {}
+    let game = null;
+    const pressed = { jump: false, slash: false };
+
+    function newGame(t, g) {
+      const hearts = g.has("shield") ? 4 : 3;
+      return {
+        phase: "play", t0: t, phaseAt: t, y: 0, vy: 0, slashAt: -10, hurtAt: -10,
+        hearts, maxHearts: hearts, hp: 100, level: 1, score: 0,
+        shots: [], nextShot: t + 2.4, bossHitAt: -10, throwAt: -10,
+      };
+    }
+    function saveBest(score) {
+      if (score <= best) return;
+      best = score;
+      try { localStorage.setItem(BEST_KEY, String(best)); } catch (_) {}
+    }
+    function stopGame() {
+      if (!game) return;
+      saveBest(game.score);
+      game = null;
+      pressed.jump = pressed.slash = false;
+      if (hooks.onGameChange) hooks.onGameChange(false);
+    }
+
+    function hurt(t, x, y) {
+      const G = game;
+      G.hearts -= 1;
+      G.hurtAt = t;
+      fx.push({ type: "splat", x, y, born: t, life: 0.8, blobs: Array.from({ length: 4 }, () => ({ dx: (Math.random() - 0.5) * 40 * s, dy: (Math.random() - 0.5) * 30 * s, r: (2 + Math.random() * 4) * s })) });
+      fx.push({ type: "tick", x, y: y - 24 * s, text: "oof", born: t, life: 0.6 });
+      if (G.hearts <= 0) {
+        G.phase = "lost";
+        G.phaseAt = t;
+        G.shots = [];
+        saveBest(G.score);
+      }
+    }
+
+    function updateGame(t, dt, L, g) {
+      let G = game;
+      const restart = (pressed.jump || pressed.slash) && G.phase === "lost" && t - G.phaseAt > 0.7;
+      if (restart) { game = G = newGame(t, g); G.nextShot = t + 1.2; }
+      const grav = 2600 * s;
+      if (pressed.jump && G.phase !== "lost" && G.y <= 0) G.vy = Math.sqrt(2 * grav * (g.has("boots") ? 132 : 110) * s);
+      if (pressed.slash && G.phase !== "lost" && t - G.slashAt > 0.3) G.slashAt = t;
+      pressed.jump = pressed.slash = false;
+
+      G.vy -= grav * dt;
+      G.y = Math.max(0, G.y + G.vy * dt);
+      if (G.y === 0 && G.vy < 0) G.vy = 0;
+
+      if (G.phase === "won" && t - G.phaseAt > 2) {
+        G.phase = "play";
+        G.level += 1;
+        G.hp = 100;
+        G.nextShot = t + 1.2;
+      }
+      if (G.phase !== "play") return;
+
+      const hx = L.hx, bx = L.vx;
+      const speed = (250 + G.level * 45 + Math.min(t - G.t0, 120) * 1.2) * s;
+      if (t >= G.nextShot) {
+        const ping = Math.random() < 0.55;
+        G.shots.push(ping
+          ? { type: "ping", x: bx - 50 * s, y: L.gy - 96 * s, v: speed * 0.85, text: pick(PINGS) }
+          : { type: "ink", x: bx - 40 * s, y: L.gy - 11 * s, v: speed });
+        G.throwAt = t;
+        G.nextShot = t + Math.max(0.7, 1.7 - G.level * 0.12 - (t - G.t0) * 0.004) + Math.random() * 0.6;
+      }
+
+      const invuln = t - G.hurtAt < 1;
+      const slashing = t - G.slashAt < 0.16;
+      for (const sh of G.shots) {
+        if (sh.back) {
+          sh.x += sh.v * dt;
+          if (sh.x >= bx - 40 * s) {
+            sh.dead = true;
+            G.hp -= 10;
+            G.score += 1;
+            G.bossHitAt = t;
+            fx.push({ type: "puff", x: sh.x, y: sh.y, born: t, life: 0.4 });
+            fx.push({ type: "pow", x: bx + 70 * s, y: L.gy - 170 * s, text: pick(POWS), size: 24 * s, rot: (Math.random() - 0.5) * 0.4, born: t, life: 0.6 });
+            if (G.hp <= 0) {
+              G.phase = "won";
+              G.phaseAt = t;
+              G.score += 5;
+              for (const o of G.shots) o.dead = true;
+            }
+          }
+          continue;
+        }
+        sh.x -= sh.v * dt;
+        if (sh.type === "ping") {
+          if (slashing && sh.x - hx < 112 * s && sh.x - hx > -6 * s) {
+            sh.back = true;
+            sh.v *= 1.6;
+            fx.push({ type: "tick", x: sh.x - 10 * s, y: sh.y + 24 * s, text: "tink", born: t, life: 0.4 });
+          } else if (sh.x < hx + 12 * s) {
+            sh.dead = true;
+            fx.push({ type: "puff", x: sh.x, y: sh.y, born: t, life: 0.4 });
+            if (!invuln) hurt(t, hx + 10 * s, sh.y);
+          }
+        } else {
+          if (!sh.hit && Math.abs(sh.x - hx) < 16 * s && G.y < 26 * s) {
+            sh.hit = true;
+            if (!invuln) hurt(t, hx, L.gy - 20 * s);
+          }
+          if (sh.x < -40 * s) sh.dead = true;
+        }
+      }
+      G.shots = G.shots.filter((o) => !o.dead);
+    }
+
+    function heart(x, y, full) {
+      const h = [[x, y + 7 * s], [x - 8 * s, y - 1 * s], [x - 7 * s, y - 7 * s], [x - 2 * s, y - 8 * s], [x, y - 4 * s], [x + 2 * s, y - 8 * s], [x + 7 * s, y - 7 * s], [x + 8 * s, y - 1 * s]];
+      fillPoly(smooth(h, true, 3), full ? ink : paper);
+      outline(h, 1.8);
+    }
+
+    function banner(L, title, sub, help, alpha) {
+      if (alpha <= 0) return;
+      const y = L.gy - 186 * s, x = W / 2;
+      ctx.globalAlpha = Math.min(1, alpha);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = paper;
+      ctx.lineWidth = 7 * s;
+      ctx.font = `900 ${Math.round(34 * Math.max(s, 0.8))}px Rubik, sans-serif`;
+      ctx.strokeText(title, x, y);
+      ctx.fillText(title, x, y);
+      ctx.font = `700 ${Math.round(17 * Math.max(s, 0.85))}px Kalam, cursive`;
+      ctx.strokeText(sub, x, y + 34 * Math.max(s, 0.8));
+      ctx.fillText(sub, x, y + 34 * Math.max(s, 0.8));
+      ctx.font = `500 ${Math.round(11 * Math.max(s, 0.85))}px "Geist Mono", ui-monospace, monospace`;
+      ctx.strokeText(help, x, y + 60 * Math.max(s, 0.8));
+      ctx.fillText(help, x, y + 60 * Math.max(s, 0.8));
+      ctx.globalAlpha = 1;
+    }
+
+    function drawGame(t, L, g, st) {
+      const G = game, hx = L.hx;
+      const r = 62 * s;
+      const bh = Math.max(0, 1 - (t - G.bossHitAt) / 0.35);
+      const lean = -Math.max(0, 1 - (t - G.throwAt) / 0.3) * 14 * s;
+      const bx = L.vx + bh * 14 * s + lean, by = L.gy - r - 26 * s + Math.sin(t * 1.7) * 6 * s;
+      lastV = { x: bx, y: by, r };
+
+      if (G.phase === "won") {
+        const k = Math.min(1, (t - G.phaseAt) / 1.2);
+        ctx.globalAlpha = 1 - k;
+        villain(bx, by + k * 20 * s, r * (1 - k * 0.4), { t, hit: 1, look: [-1, 0] });
+        ctx.globalAlpha = 1;
+        pow(bx, by - r - 30 * s, "GONE!", 40 * s, -0.12, Math.min(k * 1.4, 0.69));
+      } else {
+        for (let i = 0; i < 3; i++) {
+          const rr = r * 0.75 * (1 - i * 0.25);
+          stroke([[bx - rr, L.gy + 4 * s + i * 4 * s], [bx, L.gy + 6 * s + i * 4 * s], [bx + rr, L.gy + 4 * s + i * 4 * s]], i ? 1.1 : 2);
+        }
+        villain(bx, by, r, { t, hit: Math.min(bh, 1), look: [-1, 0.35] });
+      }
+
+      for (const sh of G.shots) {
+        if (sh.type === "ping") speech(sh.x, sh.y, sh.text);
+        else {
+          blob(sh.x, sh.y, 11 * s, 10 * s, ink, 10);
+          stroke([[sh.x + 14 * s, sh.y - 4 * s], [sh.x + 32 * s, sh.y - 3 * s]], 1.4);
+          stroke([[sh.x + 13 * s, sh.y + 5 * s], [sh.x + 25 * s, sh.y + 6 * s]], 1);
+        }
+      }
+
+      if (G.phase === "lost") {
+        heroSit(hx, L.gy, t, true, g);
+      } else {
+        const sk = (t - G.slashAt) / 0.2;
+        const a = sk < 1 ? lerp(-2.1, 0.9, easeOut(sk)) : -1.0 + Math.sin(t * 2) * 0.08;
+        if (t - G.hurtAt < 1 && Math.floor(t * 12) % 2 === 0) ctx.globalAlpha = 0.3;
+        hero(hx, L.gy, { t, a, lift: G.y, step: G.y > 0 ? 0.5 : 0, weapon: lastWeapon(g), gear: g, happy: G.phase === "won" });
+        ctx.globalAlpha = 1;
+      }
+
+      // hearts under the hero, boss HP + score under the boss
+      for (let i = 0; i < G.maxHearts; i++) heart(hx - ((G.maxHearts - 1) * 11 - i * 22) * s, L.gy + 32 * s, i < G.hearts);
+      const bw = 96 * s, bt = L.gy + 26 * s;
+      const hpw = bw * Math.max(0, G.hp) / 100;
+      if (hpw > 1) hatch([[L.vx - bw / 2, bt], [L.vx - bw / 2 + hpw, bt], [L.vx - bw / 2 + hpw, bt + 9 * s], [L.vx - bw / 2, bt + 9 * s]], 3, 0.9);
+      outline([[L.vx - bw / 2, bt], [L.vx + bw / 2, bt], [L.vx + bw / 2, bt + 9 * s], [L.vx - bw / 2, bt + 9 * s]], 1.8);
+      ctx.font = `500 ${Math.round(11 * Math.max(s, 0.85))}px "Geist Mono", ui-monospace, monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`LVL ${G.level}  ·  ${G.score}  ·  BEST ${Math.max(best, G.score)}`, L.vx, bt + 26 * s);
+
+      const help = L.mob ? "tap left: jump · tap right: slash" : "space / ↑ jump · x / j slash · esc quit";
+      if (G.phase === "lost") banner(L, "OOF.", `Score ${G.score}. Jump or slash to go again.`, help, 1);
+      else banner(L, "BREAK BRAWL", "Jump the ink. Slash the pings back.", help, 3 - (t - G.t0));
+
+      hud.label.textContent = "Break brawl";
+      hud.name.textContent = bossName(st);
+      hud.sub.textContent = `Hearts ${G.hearts} · Score ${G.score} · Best ${Math.max(best, G.score)}`;
+    }
+
+    canvas.addEventListener("pointerdown", (e) => {
+      if (!game) return;
+      e.preventDefault();
+      pressed[e.clientX < W / 2 ? "jump" : "slash"] = true;
+    });
+
     /* ---------- frame ---------- */
     function layout() {
       const mob = W < 700;
@@ -797,6 +1010,7 @@
       seed = 7919 * (boil + 1);
 
       scenery(L, t, dt);
+      if (game && st.mode === "focus") stopGame();
 
       if (st.mode === "focus") {
         choreo(st, t, g);
@@ -857,6 +1071,10 @@
         hud.label.textContent = "Now fighting";
         hud.name.textContent = bossName(st);
         hud.sub.textContent = `HP ${Math.ceil(left * 100)}% · Kit ${st.gear.length}/7`;
+      } else if (game) {
+        move = null;
+        updateGame(t, dt, L, g);
+        drawGame(t, L, g, st);
       } else {
         move = null;
         const long = st.mode === "long";
@@ -893,19 +1111,19 @@
       }
 
       wasRunning = st.running;
-      hud.fill.style.transform = `scaleX(${left.toFixed(3)})`;
+      hud.fill.style.transform = `scaleX(${(game ? Math.max(0, game.hp) / 100 : left).toFixed(3)})`;
       drawFx(t, L, st);
     }
 
     function frame(now) {
       if (!active) return;
       requestAnimationFrame(frame);
-      const fps = reduce ? 4 : 12;
+      const fps = game ? 30 : reduce ? 4 : 12;
       if (now - lastDraw < 1000 / fps) return;
       const t = now / 1000;
       const dt = Math.min(lastT ? t - lastT : 0, 0.25);
       lastDraw = now; lastT = t;
-      boil = (boil + 1) % 3;
+      boil = game ? Math.floor(now / 83) % 3 : (boil + 1) % 3;
       if (noiseEl) noiseEl.setAttribute("seed", String(boil + 1));
       draw(getState(), t, dt);
     }
@@ -955,8 +1173,19 @@
           requestAnimationFrame(frame);
         } else {
           pending.clear();
+          stopGame();
         }
       },
+      startGame() {
+        const st = getState();
+        if (!active || st.mode === "focus") return;
+        game = newGame(performance.now() / 1000, visibleGear(st));
+        fx.length = 0;
+        if (hooks.onGameChange) hooks.onGameChange(true);
+      },
+      stopGame,
+      playing: () => !!game,
+      input(action) { if (game) pressed[action] = true; },
       onComplete(prevMode, skipped) {
         if (!active || prevMode !== "focus" || skipped) return;
         defeat = { at: performance.now() / 1000, x: lastV.x, y: lastV.y, r: Math.max(lastV.r, 60 * s) };
