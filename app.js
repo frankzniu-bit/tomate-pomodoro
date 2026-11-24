@@ -1,12 +1,28 @@
 (() => {
   "use strict";
 
-  const MODES = {
-    focus: { label: "Focus", minutes: 25, idle: "Ready when you are.", run: "Stay with the one thing.", sketch: "Hold the line." },
-    short: { label: "Short break", minutes: 5, idle: "Step away for a moment.", run: "Breathe with the fruit.", sketch: "Rest by the fire." },
-    long: { label: "Long break", minutes: 15, idle: "You earned a long one.", run: "Go somewhere without a screen.", sketch: "Sleep it off. It will be back." },
+  const COPY = {
+    focus: { label: "Focus", idle: "Ready when you are.", run: "Stay with the one thing.", sketch: "Hold the line." },
+    short: { label: "Short break", idle: "Step away for a moment.", run: "Breathe with the fruit.", sketch: "Rest by the fire." },
+    long: { label: "Long break", idle: "You earned a long one.", run: "Go somewhere without a screen.", sketch: "Sleep it off. It will be back." },
   };
-  const ROUNDS = 4;
+  const PRESETS = {
+    classic: { focus: 25, short: 5, long: 15, rounds: 4 },
+    deep: { focus: 50, short: 10, long: 20, rounds: 3 },
+    sprint: { focus: 15, short: 3, long: 10, rounds: 4 },
+  };
+  const LIMITS = { focus: [1, 99], short: [1, 60], long: [1, 90], rounds: [2, 8] };
+  const LOOT = [
+    { id: "pen", kind: "Weapon", name: "Fountain Pen", desc: "Unlocks the Thrust: three quick pokes." },
+    { id: "shield", kind: "Armor", name: "Ink Shield", desc: "Knocks thrown distractions back at the boss." },
+    { id: "ruler", kind: "Weapon", name: "Ruler Blade", desc: "Unlocks the Sweep: one long, low cut." },
+    { id: "helm", kind: "Armor", name: "Folded Helm", desc: "Paper-thin. Oddly reassuring." },
+    { id: "eraser", kind: "Weapon", name: "Eraser Maul", desc: "Unlocks the Slam: leap, then erase." },
+    { id: "cape", kind: "Armor", name: "Margin Cape", desc: "Dashes leave an afterimage." },
+    { id: "boots", kind: "Armor", name: "Quick Boots", desc: "Lighter on your feet." },
+  ];
+  const DROP_MS = 5 * 60000;
+  const MAX_TASKS = 8;
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const $ = (s) => document.querySelector(s);
@@ -14,41 +30,78 @@
   const ui = {
     kicker: $("#kicker"),
     status: $("#status"),
+    quest: $("#quest"),
     toggle: $("#toggle"),
     toggleLabel: $("#toggleLabel"),
     reset: $("#reset"),
     skip: $("#skip"),
     roundNum: $("#roundNum"),
-    dots: [...document.querySelectorAll("#dots i")],
+    dots: $("#dots"),
     modeButtons: [...document.querySelectorAll(".modes button")],
+    taskCount: $("#taskCount"),
+    taskForm: $("#taskForm"),
+    taskInput: $("#taskInput"),
+    taskList: $("#taskList"),
+    kitList: $("#kitList"),
+    resetKit: $("#resetKit"),
+    presetButtons: [...document.querySelectorAll("[data-preset]")],
+    fields: [...document.querySelectorAll("[data-setting]")],
+    scrim: $("#scrim"),
+    sheets: { tasks: $("#tasksSheet"), timer: $("#timerSheet") },
+    toast: $("#toast"),
   };
 
   const state = {
     mode: "focus",
-    total: MODES.focus.minutes * 60000,
-    remaining: MODES.focus.minutes * 60000,
+    total: 25 * 60000,
+    remaining: 25 * 60000,
     endAt: 0,
     running: false,
     done: 0, // completed focus sessions
     style: "fruit",
+    settings: { ...PRESETS.classic },
+    tasks: [], // { id, text, done, poms }
+    currentId: null,
+    gear: [], // loot ids, in the order received
+    drops: 0, // loot drops in the current focus session
   };
 
+  const clampSetting = (k, v) => Math.round(Math.min(LIMITS[k][1], Math.max(LIMITS[k][0], Number(v) || LIMITS[k][0])));
+
   try {
-    const saved = JSON.parse(localStorage.getItem("tomate") || "null");
-    if (saved && Number.isFinite(saved.done)) state.done = saved.done;
-    if (saved && (saved.style === "fruit" || saved.style === "sketch")) state.style = saved.style;
+    const saved = JSON.parse(localStorage.getItem("tomate") || "null") || {};
+    if (Number.isFinite(saved.done)) state.done = saved.done;
+    if (saved.style === "fruit" || saved.style === "sketch") state.style = saved.style;
+    if (saved.settings) for (const k of Object.keys(LIMITS)) if (k in saved.settings) state.settings[k] = clampSetting(k, saved.settings[k]);
+    if (Array.isArray(saved.tasks)) {
+      state.tasks = saved.tasks
+        .filter((t) => t && typeof t.text === "string")
+        .slice(0, MAX_TASKS)
+        .map((t) => ({ id: String(t.id), text: t.text.slice(0, 60), done: !!t.done, poms: Number(t.poms) || 0 }));
+    }
+    if (state.tasks.some((t) => t.id === saved.currentId)) state.currentId = saved.currentId;
+    if (Array.isArray(saved.gear)) state.gear = saved.gear.filter((g) => LOOT.some((l) => l.id === g));
   } catch (_) {}
   if (location.hash === "#sketch" || location.hash === "#fruit") state.style = location.hash.slice(1);
+
   const persist = () => {
-    try { localStorage.setItem("tomate", JSON.stringify({ done: state.done, style: state.style })); } catch (_) {}
+    try {
+      localStorage.setItem("tomate", JSON.stringify({
+        done: state.done, style: state.style, settings: state.settings,
+        tasks: state.tasks, currentId: state.currentId, gear: state.gear,
+      }));
+    } catch (_) {}
   };
+
+  const currentTask = () => state.tasks.find((t) => t.id === state.currentId) || null;
 
   /* ---------- Timer ---------- */
 
   function setMode(mode) {
     state.mode = mode;
-    state.total = state.remaining = MODES[mode].minutes * 60000;
+    state.total = state.remaining = state.settings[mode] * 60000;
     state.running = false;
+    state.drops = 0;
     document.body.dataset.mode = mode;
     ui.modeButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
     render(true);
@@ -72,9 +125,14 @@
     if (!skipped) chime();
     sketch.onComplete(state.mode, skipped);
     if (state.mode === "focus") {
-      if (!skipped) state.done += 1;
+      if (!skipped) {
+        state.done += 1;
+        const t = currentTask();
+        if (t) t.poms += 1;
+      }
       persist();
-      setMode(state.done > 0 && state.done % ROUNDS === 0 ? "long" : "short");
+      renderTasks();
+      setMode(state.done > 0 && state.done % state.settings.rounds === 0 ? "long" : "short");
       ui.status.textContent = skipped ? "Skipped. Take the break anyway." : "Gone. Well done — rest now.";
     } else {
       setMode("focus");
@@ -82,10 +140,40 @@
     }
   }
 
+  // One drop per 5 minutes of focus; the last one lands as the session ends.
+  function checkLoot() {
+    if (state.mode !== "focus") return;
+    const due = Math.floor((state.total - state.remaining) / DROP_MS);
+    if (due <= state.drops) return;
+    state.drops = due;
+    const item = LOOT.find((l) => !state.gear.includes(l.id));
+    if (item) {
+      state.gear.push(item.id);
+      persist();
+      renderKit();
+      showToast(item.kind === "Weapon" ? "New weapon" : "New gear", item.name, item.desc);
+      sketch.onLoot(item);
+    } else {
+      showToast("Loot", "Spare ink", "The kit is complete. Keep swinging.");
+      sketch.onLoot({ id: "ink", name: "Spare ink" });
+    }
+  }
+
+  let toastTimer = 0;
+  function showToast(kicker, name, desc) {
+    ui.toast.querySelector(".toast-k").textContent = kicker;
+    ui.toast.querySelector(".toast-name").textContent = name;
+    ui.toast.querySelector(".toast-desc").textContent = desc;
+    ui.toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => ui.toast.classList.remove("show"), 5000);
+  }
+
   let lastText = "";
   function render(force) {
     const secs = Math.ceil(state.remaining / 1000);
-    const text = String(Math.floor(secs / 60)).padStart(2, "0") + String(secs % 60).padStart(2, "0");
+    const mins = Math.floor(secs / 60);
+    const text = String(mins % 100).padStart(2, "0") + String(secs % 60).padStart(2, "0");
     if (text !== lastText) {
       [...text].forEach((ch, i) => {
         const el = digits[i];
@@ -99,22 +187,38 @@
         }
       });
       lastText = text;
-      const mmss = text.slice(0, 2) + ":" + text.slice(2);
-      document.title = state.running ? `${mmss} · ${MODES[state.mode].label}` : "Tomate — a slow pomodoro";
+      const mmss = String(mins).padStart(2, "0") + ":" + text.slice(2);
+      document.title = state.running ? `${mmss} · ${COPY[state.mode].label}` : "Tomate — a slow pomodoro";
     }
     if (!force) return;
 
     document.body.classList.toggle("running", state.running);
-    ui.kicker.textContent = MODES[state.mode].label;
+    ui.kicker.textContent = COPY[state.mode].label;
     ui.toggleLabel.textContent = state.running ? "Pause" : state.remaining < state.total ? "Resume" : "Start";
     const fresh = state.remaining === state.total && !state.running;
-    if (fresh || state.running) ui.status.textContent = state.running ? (state.style === "sketch" ? MODES[state.mode].sketch : MODES[state.mode].run) : MODES[state.mode].idle;
-    if (!state.running && !fresh) ui.status.textContent = "Paused.";
+    if (state.running) ui.status.textContent = state.style === "sketch" ? COPY[state.mode].sketch : COPY[state.mode].run;
+    else ui.status.textContent = fresh ? COPY[state.mode].idle : "Paused.";
 
-    const inCycle = state.done % ROUNDS;
+    const rounds = state.settings.rounds;
+    if (ui.dots.children.length !== rounds) ui.dots.innerHTML = "<i></i>".repeat(rounds);
+    const inCycle = state.done % rounds;
     const cycleFull = state.done > 0 && inCycle === 0 && state.mode === "long";
-    ui.dots.forEach((d, i) => d.classList.toggle("on", cycleFull || i < inCycle));
+    [...ui.dots.children].forEach((d, i) => d.classList.toggle("on", cycleFull || i < inCycle));
     ui.roundNum.textContent = String(state.done + 1).padStart(2, "0");
+    renderQuest();
+  }
+
+  function renderQuest() {
+    const t = currentTask();
+    ui.quest.classList.toggle("empty", !t);
+    ui.quest.innerHTML = "";
+    const label = document.createElement("span");
+    label.className = "quest-k";
+    label.textContent = t ? (state.style === "sketch" ? "Boss" : "Working on") : "+";
+    const name = document.createElement("span");
+    name.className = "quest-name";
+    name.textContent = t ? t.text : "Name this pomodoro";
+    ui.quest.append(label, name);
   }
 
   ui.toggle.addEventListener("click", () => (state.running ? pause() : start()));
@@ -125,6 +229,10 @@
   addEventListener("keydown", (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
+    if (k === "escape") return closeSheets();
+    const tag = e.target && e.target.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    if (openSheet) return;
     if (k === " ") {
       if (document.activeElement && document.activeElement.tagName === "BUTTON") return; // let the button handle it
       e.preventDefault();
@@ -135,6 +243,166 @@
     else if (k === "2") setMode("short");
     else if (k === "3") setMode("long");
     else if (k === "v") setStyle(state.style === "sketch" ? "fruit" : "sketch");
+    else if (k === "t") { e.preventDefault(); showSheet("tasks"); }
+  });
+
+  /* ---------- Sheets: tasks + timer settings ---------- */
+
+  let openSheet = null, lastFocus = null;
+  function showSheet(name) {
+    closeSheets();
+    lastFocus = document.activeElement;
+    openSheet = name;
+    ui.scrim.hidden = false;
+    ui.sheets[name].hidden = false;
+    requestAnimationFrame(() => {
+      ui.scrim.classList.add("open");
+      ui.sheets[name].classList.add("open");
+      const first = ui.sheets[name].querySelector("input:not(:disabled)") || ui.sheets[name].querySelector("button");
+      if (first) first.focus();
+    });
+  }
+  function closeSheets() {
+    if (!openSheet) return;
+    const el = ui.sheets[openSheet];
+    el.classList.remove("open");
+    ui.scrim.classList.remove("open");
+    setTimeout(() => { el.hidden = true; ui.scrim.hidden = true; }, 200);
+    openSheet = null;
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+  ui.scrim.addEventListener("click", closeSheets);
+  document.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", closeSheets));
+  document.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => showSheet(b.dataset.open)));
+  ui.quest.addEventListener("click", () => showSheet("tasks"));
+
+  function renderTasks() {
+    ui.taskList.innerHTML = "";
+    if (!state.tasks.length) {
+      const li = document.createElement("li");
+      li.className = "task-empty";
+      li.textContent = "Nothing yet. Name the one thing this pomodoro is for.";
+      ui.taskList.append(li);
+    }
+    for (const t of state.tasks) {
+      const li = document.createElement("li");
+      li.className = "task" + (t.done ? " done" : "") + (t.id === state.currentId ? " current" : "");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = t.done;
+      box.setAttribute("aria-label", `Mark "${t.text}" done`);
+      box.addEventListener("change", () => toggleTask(t.id));
+      const name = document.createElement("button");
+      name.className = "task-name";
+      name.textContent = t.text;
+      name.title = "Focus on this";
+      name.setAttribute("aria-pressed", String(t.id === state.currentId));
+      name.addEventListener("click", () => setCurrent(t.id));
+      const meta = document.createElement("span");
+      meta.className = "task-meta";
+      meta.textContent = t.id === state.currentId ? "Now" : t.poms ? `${t.poms}×` : "";
+      const del = document.createElement("button");
+      del.className = "task-del";
+      del.textContent = "×";
+      del.setAttribute("aria-label", `Delete "${t.text}"`);
+      del.addEventListener("click", () => removeTask(t.id));
+      li.append(box, name, meta, del);
+      ui.taskList.append(li);
+    }
+    const open = state.tasks.filter((t) => !t.done).length;
+    ui.taskCount.textContent = open ? String(open) : "";
+    ui.taskInput.disabled = state.tasks.length >= MAX_TASKS;
+    ui.taskInput.placeholder = ui.taskInput.disabled ? "List is full. Finish something first." : "What needs doing?";
+    renderQuest();
+  }
+  function nextOpen() {
+    const t = state.tasks.find((x) => !x.done);
+    return t ? t.id : null;
+  }
+  function setCurrent(id) {
+    const t = state.tasks.find((x) => x.id === id);
+    if (!t) return;
+    if (t.done) t.done = false;
+    state.currentId = id;
+    persist();
+    renderTasks();
+  }
+  function toggleTask(id) {
+    const t = state.tasks.find((x) => x.id === id);
+    if (!t) return;
+    t.done = !t.done;
+    if (t.done && state.currentId === id) state.currentId = nextOpen();
+    persist();
+    renderTasks();
+  }
+  function removeTask(id) {
+    state.tasks = state.tasks.filter((x) => x.id !== id);
+    if (state.currentId === id) state.currentId = nextOpen();
+    persist();
+    renderTasks();
+  }
+  ui.taskForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = ui.taskInput.value.trim().slice(0, 60);
+    if (!text || state.tasks.length >= MAX_TASKS) return;
+    const t = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text, done: false, poms: 0 };
+    state.tasks.push(t);
+    if (!currentTask()) state.currentId = t.id;
+    ui.taskInput.value = "";
+    persist();
+    renderTasks();
+  });
+
+  function renderSettings() {
+    ui.fields.forEach((f) => (f.value = state.settings[f.dataset.setting]));
+    ui.presetButtons.forEach((b) => {
+      const p = PRESETS[b.dataset.preset];
+      b.setAttribute("aria-pressed", String(Object.keys(p).every((k) => p[k] === state.settings[k])));
+    });
+  }
+  function applySettings() {
+    persist();
+    renderSettings();
+    // A session already under way keeps its length; fresh ones pick up the change.
+    if (!state.running && state.remaining === state.total) setMode(state.mode);
+    else render(true);
+  }
+  ui.fields.forEach((f) => f.addEventListener("change", () => {
+    state.settings[f.dataset.setting] = clampSetting(f.dataset.setting, f.value);
+    applySettings();
+  }));
+  ui.presetButtons.forEach((b) => b.addEventListener("click", () => {
+    state.settings = { ...PRESETS[b.dataset.preset] };
+    applySettings();
+  }));
+
+  function renderKit() {
+    ui.kitList.innerHTML = "";
+    for (const l of LOOT) {
+      const has = state.gear.includes(l.id);
+      const li = document.createElement("li");
+      li.className = has ? "has" : "locked";
+      li.innerHTML = `<span class="kit-kind"></span><span class="kit-name"></span>`;
+      li.querySelector(".kit-kind").textContent = l.kind;
+      li.querySelector(".kit-name").textContent = has ? l.name : "Locked";
+      li.title = has ? l.desc : "Drops every 5 minutes of focus";
+      ui.kitList.append(li);
+    }
+    ui.resetKit.hidden = !state.gear.length;
+  }
+  let resetArmed = false;
+  ui.resetKit.addEventListener("click", () => {
+    if (!resetArmed) {
+      resetArmed = true;
+      ui.resetKit.textContent = "Click again to reset";
+      setTimeout(() => { resetArmed = false; ui.resetKit.textContent = "Reset kit"; }, 3000);
+      return;
+    }
+    resetArmed = false;
+    ui.resetKit.textContent = "Reset kit";
+    state.gear = [];
+    persist();
+    renderKit();
   });
 
   /* ---------- Sound ---------- */
@@ -289,6 +557,7 @@
     if (state.running) {
       state.remaining = Math.max(0, state.endAt - now);
       render(false);
+      checkLoot();
       if (state.remaining <= 0) { state.running = false; complete(false); }
     }
 
@@ -341,6 +610,9 @@
   styleButtons.forEach((b) => b.addEventListener("click", () => setStyle(b.dataset.style)));
 
   setStyle(state.style);
+  renderTasks();
+  renderSettings();
+  renderKit();
   setMode("focus");
   requestAnimationFrame(frame);
 })();
