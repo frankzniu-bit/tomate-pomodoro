@@ -109,14 +109,14 @@
 
   function start() {
     if (state.remaining <= 0) state.remaining = state.total;
-    state.endAt = performance.now() + state.remaining;
+    state.endAt = Date.now() + state.remaining;
     state.running = true;
     ensureAudio();
     render(true);
   }
 
   function pause() {
-    state.remaining = Math.max(0, state.endAt - performance.now());
+    state.remaining = Math.max(0, state.endAt - Date.now());
     state.running = false;
     render(true);
   }
@@ -550,16 +550,31 @@
   resize();
 
   let left = 1, flow = 0, breath = 0, last = performance.now();
+  // Wall-clock time, so the countdown stays true across sleep and throttling.
+  function tick() {
+    if (!state.running) return;
+    state.remaining = Math.max(0, state.endAt - Date.now());
+    render(false);
+    checkLoot();
+    if (state.remaining <= 0) { state.running = false; complete(false); }
+  }
+
+  // Browsers pause requestAnimationFrame in background tabs and throttle page timers,
+  // so a worker keeps the tab title counting and the alarm on time.
+  try {
+    const src = "setInterval(() => postMessage(0), 250);";
+    const worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+    worker.onmessage = () => tick();
+  } catch (_) {
+    setInterval(tick, 250);
+  }
+  document.addEventListener("visibilitychange", () => tick());
+
   function frame(now) {
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
 
-    if (state.running) {
-      state.remaining = Math.max(0, state.endAt - now);
-      render(false);
-      checkLoot();
-      if (state.remaining <= 0) { state.running = false; complete(false); }
-    }
+    tick();
 
     const target = state.remaining / state.total;
     left += (target - left) * Math.min(1, dt * 4);

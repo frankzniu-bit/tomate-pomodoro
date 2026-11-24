@@ -151,12 +151,10 @@ header, main, footer { position: relative; z-index: 1; }
   transform: translateY(-0.06em);
   transition: opacity 200ms var(--ease);
 }
-body.running .time .colon { animation: blink 1s steps(1) infinite; }
 @keyframes roll {
   from { transform: translateY(-100%); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
-@keyframes blink { 50% { opacity: 0.25; } }
 
 .status {
   font-family: var(--display);
@@ -293,7 +291,6 @@ kbd:first-child { margin-left: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .time .d b.roll { animation: none; }
-  body.running .time .colon { animation: none; }
 }
 
 /* ==========================================================
