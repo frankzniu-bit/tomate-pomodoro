@@ -7,3 +7,4 @@ build/
 *.pem
 credentials*.json
 .claude/
+.vercel

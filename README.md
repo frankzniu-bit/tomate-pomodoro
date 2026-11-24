@@ -1,5 +1,7 @@
 # Tomate
 
+Live at https://tomate-pomodoro-three.vercel.app
+
 A slow pomodoro. The timer is drawn as a living tomato (a hand-written WebGL shader) that shrinks as each focus session drains, with topographic contour lines rippling out from it. Breaks make the fruit breathe on a 4s in / 4s out cycle.
 
 Plain HTML, CSS and JS with no build step and no dependencies.
